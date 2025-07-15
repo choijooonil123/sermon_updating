@@ -22,7 +22,7 @@
 <button onclick="togglePause()">⏸️ 일시정지</button>
 <button onclick="stopSermon()">❌ 종료</button>
 <button onclick="rewindSentence()">⏪ 이전 문장 버튼</button>
-<button onclick="loadPreviousSermon()">📂 이전 설교</button>
+<button onclick="newSermon()">🆕 새 설교</button>
 <button onclick="saveSermon()">💾 저장</button>
 
 <p id="status">상태 메시지</p>
@@ -35,7 +35,6 @@
   let voices = [];
   let currentUtterance = null;
   let rewindCount = 0;
-  let lastSavedSermon = '';
 
   // 음성 로딩
   function loadVoices() {
@@ -49,7 +48,15 @@
       voiceSelect.appendChild(option);
     });
   }
-  speechSynthesis.onvoiceschanged = loadVoices;
+
+  // 시작 시 이전 설교 불러오기
+  function loadLastSermon() {
+    const saved = localStorage.getItem("lastSermon");
+    if (saved) {
+      document.getElementById("sermonInput").value = saved;
+      document.getElementById("status").textContent = "📂 이전 저장 설교를 불러왔습니다.";
+    }
+  }
 
   function getSelectedVoice() {
     const selectedIndex = document.getElementById("voiceSelect").value;
@@ -115,7 +122,7 @@
 
   function saveSermon() {
     const text = document.getElementById("sermonInput").value;
-    lastSavedSermon = text; // 메모리에 저장
+    localStorage.setItem("lastSermon", text);  // 브라우저에 저장
     const blob = new Blob([text], { type: 'text/plain' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -124,156 +131,19 @@
     document.getElementById("status").textContent = "💾 저장 완료!";
   }
 
-  function loadPreviousSermon() {
-    if (!lastSavedSermon) {
-      document.getElementById("status").textContent = "⚠️ 이전에 저장된 설교가 없습니다.";
-    } else {
-      document.getElementById("sermonInput").value = lastSavedSermon;
-      document.getElementById("status").textContent = "📂 이전 설교 불러옴";
-    }
-  }
-
-  window.onload = loadVoices;
-</script>
-
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <title>설교 읽기 시스템</title>
-  <style>
-    body { font-family: Arial; margin: 40px; background: #f0f8ff; }
-    textarea { width: 100%; height: 200px; font-size: 1em; padding: 10px; }
-    select, button { margin: 5px; padding: 10px; font-size: 1em; }
-    #status { margin-top: 10px; font-weight: bold; color: #003366; }
-  </style>
-</head>
-<body>
-
-<h1>📖 설교 읽기 시스템</h1>
-
-<textarea id="sermonInput" placeholder="여기에 설교문을 입력하세요. 문장은 마침표로 구분해주세요."></textarea><br>
-
-<select id="voiceSelect"></select><br>
-
-<button onclick="startSermon()">🔊 설교 시작</button>
-<button onclick="togglePause()">⏸️ 일시정지</button>
-<button onclick="stopSermon()">❌ 종료</button>
-<button onclick="rewindSentence()">⏪ 이전 문장 버튼</button>
-<button onclick="loadPreviousSermon()">📂 이전 설교</button>
-<button onclick="saveSermon()">💾 저장</button>
-
-<p id="status">상태 메시지</p>
-
-<script>
-  let sermonSentences = [];
-  let currentIndex = 0;
-  let isPaused = false;
-  let synth = window.speechSynthesis;
-  let voices = [];
-  let currentUtterance = null;
-  let rewindCount = 0;
-  let lastSavedSermon = '';
-
-  // 음성 로딩
-  function loadVoices() {
-    voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
-    const voiceSelect = document.getElementById("voiceSelect");
-    voiceSelect.innerHTML = "";
-    voices.forEach((voice, i) => {
-      const option = document.createElement("option");
-      option.textContent = `${voice.name} (${voice.lang})`;
-      option.value = i;
-      voiceSelect.appendChild(option);
-    });
-  }
-  speechSynthesis.onvoiceschanged = loadVoices;
-
-  function getSelectedVoice() {
-    const selectedIndex = document.getElementById("voiceSelect").value;
-    return voices[selectedIndex] || null;
-  }
-
-  function startSermon() {
-    const text = document.getElementById("sermonInput").value;
-    if (!text.trim()) {
-      alert("설교문을 입력하세요.");
-      return;
-    }
-    sermonSentences = text.split(/(?<=\.)\s*/);
-    currentIndex = Math.max(0, currentIndex - rewindCount);
-    rewindCount = 0;
-    isPaused = false;
-    speakNext();
-  }
-
-  function speakNext() {
-    if (isPaused || currentIndex >= sermonSentences.length) return;
-
-    const sentence = sermonSentences[currentIndex];
-    currentUtterance = new SpeechSynthesisUtterance(sentence);
-    currentUtterance.voice = getSelectedVoice();
-    currentUtterance.lang = currentUtterance.voice?.lang || 'ko-KR';
-
-    currentUtterance.onend = () => {
-      if (!isPaused) {
-        currentIndex++;
-        speakNext();
-      }
-    };
-
-    document.getElementById("status").textContent = `🗣️ ${currentIndex + 1}번째 문장 읽는 중...`;
-    synth.speak(currentUtterance);
-  }
-
-  function togglePause() {
-    if (synth.speaking && !isPaused) {
-      isPaused = true;
-      synth.cancel();
-      document.getElementById("status").textContent = "⏸️ 일시 정지됨";
-    } else if (isPaused) {
-      isPaused = false;
-      document.getElementById("status").textContent = "▶️ 이어서 읽는 중...";
-      speakNext();
-    }
-  }
-
-  function stopSermon() {
-    isPaused = true;
+  function newSermon() {
+    document.getElementById("sermonInput").value = "";
+    document.getElementById("status").textContent = "🆕 새 설교문을 작성하세요.";
     currentIndex = 0;
     rewindCount = 0;
-    synth.cancel();
-    document.getElementById("status").textContent = "🛑 설교 종료됨";
+    isPaused = false;
   }
 
-  function rewindSentence() {
-    rewindCount++;
-    document.getElementById("status").textContent = `⏪ ${rewindCount}문장 되감기 설정됨`;
-  }
-
-  function saveSermon() {
-    const text = document.getElementById("sermonInput").value;
-    lastSavedSermon = text; // 메모리에 저장
-    const blob = new Blob([text], { type: 'text/plain' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `설교문_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
-    link.click();
-    document.getElementById("status").textContent = "💾 저장 완료!";
-  }
-
-  function loadPreviousSermon() {
-    if (!lastSavedSermon) {
-      document.getElementById("status").textContent = "⚠️ 이전에 저장된 설교가 없습니다.";
-    } else {
-      document.getElementById("sermonInput").value = lastSavedSermon;
-      document.getElementById("status").textContent = "📂 이전 설교 불러옴";
-    }
-  }
-
-  window.onload = loadVoices;
+  // 시작 시 음성 불러오기 및 마지막 설교 불러오기
+  window.onload = function() {
+    loadVoices();
+    loadLastSermon();
+  };
 </script>
 
 </body>
