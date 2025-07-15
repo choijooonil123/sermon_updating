@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>설교 읽기 및 음성 수정</title>
+  <style>
+    body { font-family: Arial; margin: 40px; background: #f0f8ff; }
+    textarea { width: 100%; height: 200px; font-size: 1em; padding: 10px; }
+    button { margin: 5px; padding: 10px 15px; font-size: 1em; }
+    #status { margin-top: 10px; font-weight: bold; color: #003366; }
+  </style>
+</head>
+<body>
+
+<h1>📖 설교 읽기 및 음성 수정 시스템</h1>
+
+<textarea id="sermonInput" placeholder="여기에 설교문을 입력하세요. 문장은 마침표로 구분해주세요."></textarea><br>
+<button onclick="startSermon()">🔊 설교 시작</button>
+<button onclick="startVoiceCommand()">🎤 음성 명령</button>
+<button onclick="undoEdit()">↩️ 이전 상태</button>
+
+<p id="status">상태 메시지</p>
+
+<script>
+  let sermonSentences = [];
+  let currentIndex = 0;
+  let sermonHistory = [];
+
+  function startSermon() {
+    const text = document.getElementById("sermonInput").value;
+    if (!text.trim()) {
+      alert("설교문을 입력하세요.");
+      return;
+    }
+    sermonSentences = text.split(/(?<=\.)\s*/); // 마침표 뒤 분할
+    currentIndex = 0;
+    sermonHistory = [text]; // 초기 저장
+    speakNext();
+  }
+
+  function speakNext() {
+    if (currentIndex >= sermonSentences.length) {
+      document.getElementById("status").textContent = "📘 설교 완료";
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(sermonSentences[currentIndex]);
+    utterance.lang = 'ko-KR';
+    utterance.onend = () => {
+      currentIndex++;
+      speakNext();
+    };
+    document.getElementById("status").textContent = `🗣️ ${currentIndex + 1}번째 문장 읽는 중...`;
+    speechSynthesis.speak(utterance);
+  }
+
+  function startVoiceCommand() {
+    if (!('webkitSpeechRecognition' in window)) {
+      alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
+      return;
+    }
+
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = "ko-KR";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.start();
+
+    document.getElementById("status").textContent = "🎤 음성 명령 듣는 중...";
+
+    recognition.onresult = function(event) {
+      const command = event.results[0][0].transcript.trim();
+      document.getElementById("status").textContent = "📝 인식됨: " + command;
+      applyVoiceCommand(command);
+    };
+
+    recognition.onerror = function(event) {
+      document.getElementById("status").textContent = "❌ 오류: " + event.error;
+    };
+  }
+
+function applyVoiceCommand(command) {
+  // 1. 앞문장부터 다시 읽어줘
+  if (command.includes("앞문장부터 다시") || command.includes("이전 문장부터 다시")) {
+    if (currentIndex > 1) {
+      currentIndex -= 2;  // 방금 읽은 문장의 '이전 문장'부터 다시
+    } else {
+      currentIndex = 0;
+    }
+    speakNext();
+    return;
+  }
+
+  // 2. 현재 문장 수정
+  const match = command.match(/현재 문장을 (.+)로 바꿔줘/);
+  if (match && match[1]) {
+    sermonHistory.push(document.getElementById("sermonInput").value); // 저장
+    const newSentence = match[1].trim();
+
+    if (currentIndex - 1 >= 0 && currentIndex - 1 < sermonSentences.length) {
+      sermonSentences[currentIndex - 1] = newSentence + ".";
+      updateTextarea();
+      document.getElementById("status").textContent = "✏️ 현재 문장을 수정했습니다.";
+    } else {
+      document.getElementById("status").textContent = "❗ 읽고 있는 문장이 없습니다.";
+    }
+    return;
+  }
+
+  document.getElementById("status").textContent = "❗ 명령어를 이해하지 못했습니다.";
+}
+
+
+  function updateTextarea() {
+    document.getElementById("sermonInput").value = sermonSentences.join(" ");
+  }
+
+  function undoEdit() {
+    if (sermonHistory.length > 0) {
+      const prev = sermonHistory.pop();
+      document.getElementById("sermonInput").value = prev;
+      sermonSentences = prev.split(/(?<=\.)\s*/);
+      currentIndex = 0;
+      document.getElementById("status").textContent = "↩️ 이전 상태로 복원했습니다.";
+    } else {
+      document.getElementById("status").textContent = "❗ 되돌릴 내용이 없습니다.";
+    }
+  }
+</script>
+
+</body>
+</html>
