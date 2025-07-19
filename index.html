@@ -2,10 +2,21 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>설교 낭독 텍스트 변환</title>
+  <title>설교 읽기 + 직접 낭독 + 텍스트 변환</title>
   <style>
     body { font-family: Arial; margin: 40px; background: #f0f8ff; }
-    button { margin: 5px; padding: 10px; font-size: 1em; }
+    textarea { width: 100%; height: 150px; font-size: 1em; padding: 10px; white-space: pre-wrap; }
+    select, button { margin: 5px; padding: 10px; font-size: 1em; }
+    #previewBox {
+      background: #fff; border: 1px solid #ccc; padding: 20px; margin-bottom: 15px;
+      min-height: 100px; line-height: 1.6; white-space: pre-wrap;
+    }
+    .prev, .next { color: #888; font-size: 1em; }
+    .current {
+      font-size: 1.3em; font-weight: bold; color: #222; background: #eef;
+      padding: 4px; border-radius: 6px;
+    }
+    audio { margin-top: 15px; width: 100%; }
     #liveTranscript {
       margin-top: 20px;
       background: #ffffff;
@@ -21,15 +32,124 @@
 </head>
 <body>
 
-<h1>🎙️ 설교 직접 낭독 → 텍스트 변환</h1>
+<h1>📖 설교 읽기 + 🎙️ 직접 낭독 + 📝 텍스트 변환</h1>
 
+<div id="previewBox"></div>
+<textarea id="sermonInput" placeholder="한 문장마다 줄을 바꿔 작성하세요."></textarea><br>
+
+<select id="voiceSelect"></select><br>
+
+<div>
+  <button onclick="startSermon()">🔊 설교 시작</button>
+  <button onclick="togglePause()">⏸️ 일시정지</button>
+  <button onclick="stopSermon()">❌ 종료</button>
+  <button onclick="rewindSentence()">⏪ 이전 문장</button>
+  <button onclick="newSermon()">🆕 새 설교</button>
+  <button onclick="saveSermon()">💾 저장</button>
+</div>
+
+<div>
+  <label>🗣️ 음성 속도 조절: </label>
+  <button onclick="changeRate(0.1)">🚀 빠르게</button>
+  <button onclick="changeRate(-0.1)">🐢 느리게</button>
+  <span id="rateStatus">(현재 속도: 1.0)</span>
+</div>
+
+<hr>
+<h2>📝 실시간 텍스트 변환 (내가 낭독한 설교)</h2>
 <button onclick="startSTT()">🎙️ 낭독 시작</button>
 <button onclick="stopSTT()">⏹️ 종료</button>
-
 <div id="liveTranscript">(여기에 낭독한 설교가 텍스트로 표시됩니다)</div>
 
 <script>
+  let sermonSentences = [], currentIndex = 0, isPaused = false, rewindCount = 0;
+  let synth = window.speechSynthesis, voices = [], currentUtterance = null, speechRate = 1.0;
   let recognition;
+
+  function loadVoices() {
+    voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
+    const select = document.getElementById("voiceSelect");
+    select.innerHTML = "";
+    voices.forEach((v, i) => {
+      const opt = document.createElement("option");
+      opt.textContent = `${v.name} (${v.lang})`; opt.value = i;
+      select.appendChild(opt);
+    });
+  }
+
+  function getSelectedVoice() {
+    return voices[document.getElementById("voiceSelect").value] || null;
+  }
+
+  function cleanSentence(text) {
+    return text.replace(/<[^>]*>/g, '').replace(/(\d+):(\d+)/g, '$1장 $2절').replace(/[<>]/g, '');
+  }
+
+  function updatePreview(index) {
+    const box = document.getElementById("previewBox");
+    const start = Math.max(0, index - 2), end = Math.min(sermonSentences.length - 1, index + 2);
+    let html = "";
+    for (let i = start; i <= end; i++) {
+      const cls = i < index ? 'prev' : i === index ? 'current' : 'next';
+      html += `<div class="${cls}">${cleanSentence(sermonSentences[i])}</div>`;
+    }
+    box.innerHTML = html;
+  }
+
+  function startSermon() {
+    const text = document.getElementById("sermonInput").value;
+    if (!text.trim()) return alert("설교문을 입력하세요.");
+    sermonSentences = text.split(/\n+/).filter(t => t.trim().length);
+    currentIndex = Math.max(0, currentIndex - rewindCount); rewindCount = 0; isPaused = false;
+    speakNext();
+  }
+
+  function speakNext() {
+    if (isPaused || currentIndex >= sermonSentences.length) return;
+    const raw = sermonSentences[currentIndex];
+    const cleaned = cleanSentence(raw);
+    updatePreview(currentIndex);
+    currentUtterance = new SpeechSynthesisUtterance(cleaned);
+    currentUtterance.voice = getSelectedVoice();
+    currentUtterance.rate = speechRate;
+    currentUtterance.onend = () => { if (!isPaused) { currentIndex++; speakNext(); } };
+    synth.speak(currentUtterance);
+  }
+
+  function togglePause() {
+    if (synth.speaking && !isPaused) { isPaused = true; synth.cancel(); }
+    else if (isPaused) { isPaused = false; speakNext(); }
+  }
+
+  function stopSermon() {
+    isPaused = true; currentIndex = 0; rewindCount = 0; synth.cancel(); updatePreview(-1);
+  }
+
+  function rewindSentence() {
+    rewindCount++;
+  }
+
+  function changeRate(delta) {
+    speechRate = Math.min(2.0, Math.max(0.5, speechRate + delta));
+    document.getElementById("rateStatus").textContent = `(현재 속도: ${speechRate.toFixed(1)})`;
+  }
+
+  function saveSermon() {
+    const txt = document.getElementById("sermonInput").value;
+    localStorage.setItem("lastSermon", txt);
+    const blob = new Blob([txt], { type: 'text/plain' });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `설교문_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
+    a.click();
+  }
+
+  function newSermon() {
+    document.getElementById("sermonInput").value = "";
+    currentIndex = 0; rewindCount = 0; isPaused = false;
+    updatePreview(-1);
+  }
+
   function startSTT() {
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = "ko-KR";
@@ -49,6 +169,14 @@
   function stopSTT() {
     if (recognition) recognition.stop();
   }
+
+  window.onload = () => {
+    loadVoices();
+    setTimeout(loadVoices, 200);
+    const saved = localStorage.getItem("lastSermon");
+    if (saved) document.getElementById("sermonInput").value = saved;
+    updatePreview(-1);
+  };
 </script>
 
 </body>
