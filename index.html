@@ -2,194 +2,178 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>설교 읽기 시스템</title>
+  <title>설교 읽기 + 직접 녹음 시스템</title>
   <style>
     body { font-family: Arial; margin: 40px; background: #f0f8ff; }
-    textarea { width: 100%; height: 200px; font-size: 1em; padding: 10px; white-space: pre-wrap; }
+    textarea { width: 100%; height: 150px; font-size: 1em; padding: 10px; white-space: pre-wrap; }
     select, button { margin: 5px; padding: 10px; font-size: 1em; }
     #status { margin-top: 10px; font-weight: bold; color: #003366; }
     #previewBox {
-      background: #fff;
-      border: 1px solid #ccc;
-      padding: 20px;
-      margin-bottom: 15px;
-      min-height: 100px;
-      line-height: 1.6;
-      white-space: pre-wrap;
+      background: #fff; border: 1px solid #ccc; padding: 20px; margin-bottom: 15px;
+      min-height: 100px; line-height: 1.6; white-space: pre-wrap;
     }
-    .prev, .next {
-      color: #888;
-      font-size: 1em;
-    }
+    .prev, .next { color: #888; font-size: 1em; }
     .current {
-      font-size: 1.3em;
-      font-weight: bold;
-      color: #222;
-      background: #eef;
-      padding: 4px;
-      border-radius: 6px;
+      font-size: 1.3em; font-weight: bold; color: #222; background: #eef;
+      padding: 4px; border-radius: 6px;
     }
+    audio { margin-top: 15px; width: 100%; }
   </style>
 </head>
 <body>
 
-<h1>📖 설교 읽기 시스템</h1>
+<h1>📖 설교 읽기 + 🎙️ 직접 낭독 녹음</h1>
 
-<div id="previewBox">
-  <div class="prev">앞 문장 출력 영역</div>
-  <div class="current">현재 문장 출력 영역</div>
-  <div class="next">다음 문장 출력 영역</div>
-</div>
-
+<div id="previewBox"></div>
 <textarea id="sermonInput" placeholder="한 문장마다 줄을 바꿔 작성하세요."></textarea><br>
 
 <select id="voiceSelect"></select><br>
 
-<button onclick="startSermon()">🔊 설교 시작</button>
-<button onclick="togglePause()">⏸️ 일시정지</button>
-<button onclick="stopSermon()">❌ 종료</button>
-<button onclick="rewindSentence()">⏪ 이전 문장 버튼</button>
-<button onclick="newSermon()">🆕 새 설교</button>
-<button onclick="saveSermon()">💾 저장</button>
+<div>
+  <button onclick="startSermon()">🔊 설교 시작</button>
+  <button onclick="togglePause()">⏸️ 일시정지</button>
+  <button onclick="stopSermon()">❌ 종료</button>
+  <button onclick="rewindSentence()">⏪ 이전 문장</button>
+  <button onclick="newSermon()">🆕 새 설교</button>
+  <button onclick="saveSermon()">💾 저장</button>
+</div>
+
+<div>
+  <label>🗣️ 음성 속도 조절: </label>
+  <button onclick="changeRate(0.1)">🚀 빠르게</button>
+  <button onclick="changeRate(-0.1)">🐢 느리게</button>
+  <span id="rateStatus">(현재 속도: 1.0)</span>
+</div>
+
+<hr>
+<h2>🎙️ 직접 낭독 녹음</h2>
+<button onclick="startRecording()" id="recordBtn">⏺️ 녹음 시작</button>
+<button onclick="stopRecording()" id="stopBtn" disabled>⏹️ 녹음 중지</button>
+<a id="downloadLink" style="display: none;" download="설교녹음.webm">💾 녹음 다운로드</a>
+<audio id="audioPlayback" controls style="display: none;"></audio>
 
 <p id="status">상태 메시지</p>
 
 <script>
-  let sermonSentences = [];
-  let currentIndex = 0;
-  let isPaused = false;
-  let synth = window.speechSynthesis;
-  let voices = [];
-  let currentUtterance = null;
-  let rewindCount = 0;
+  let sermonSentences = [], currentIndex = 0, isPaused = false, rewindCount = 0;
+  let synth = window.speechSynthesis, voices = [], currentUtterance = null, speechRate = 1.0;
+  let mediaRecorder, audioChunks = [];
 
   function loadVoices() {
     voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
-    const voiceSelect = document.getElementById("voiceSelect");
-    voiceSelect.innerHTML = "";
-    voices.forEach((voice, i) => {
-      const option = document.createElement("option");
-      option.textContent = `${voice.name} (${voice.lang})`;
-      option.value = i;
-      voiceSelect.appendChild(option);
+    const select = document.getElementById("voiceSelect");
+    select.innerHTML = "";
+    voices.forEach((v, i) => {
+      const opt = document.createElement("option");
+      opt.textContent = `${v.name} (${v.lang})`; opt.value = i;
+      select.appendChild(opt);
     });
   }
 
-  function loadLastSermon() {
-    const saved = localStorage.getItem("lastSermon");
-    if (saved) {
-      document.getElementById("sermonInput").value = saved;
-      document.getElementById("status").textContent = "📂 이전 저장 설교를 불러왔습니다.";
-    }
+  function getSelectedVoice() {
+    return voices[document.getElementById("voiceSelect").value] || null;
   }
 
-  function getSelectedVoice() {
-    const selectedIndex = document.getElementById("voiceSelect").value;
-    return voices[selectedIndex] || null;
+  function cleanSentence(text) {
+    return text.replace(/<[^>]*>/g, '').replace(/(\d+):(\d+)/g, '$1장 $2절').replace(/[<>]/g, '');
+  }
+
+  function updatePreview(index) {
+    const box = document.getElementById("previewBox");
+    const start = Math.max(0, index - 2), end = Math.min(sermonSentences.length - 1, index + 2);
+    let html = "";
+    for (let i = start; i <= end; i++) {
+      const cls = i < index ? 'prev' : i === index ? 'current' : 'next';
+      html += `<div class="${cls}">${cleanSentence(sermonSentences[i])}</div>`;
+    }
+    box.innerHTML = html;
   }
 
   function startSermon() {
     const text = document.getElementById("sermonInput").value;
-    if (!text.trim()) {
-      alert("설교문을 입력하세요.");
-      return;
-    }
-    sermonSentences = text.split(/\n+/).filter(line => line.trim().length > 0);  // 빈 줄 제거
-    currentIndex = Math.max(0, currentIndex - rewindCount);
-    rewindCount = 0;
-    isPaused = false;
+    if (!text.trim()) return alert("설교문을 입력하세요.");
+    sermonSentences = text.split(/\n+/).filter(t => t.trim().length);
+    currentIndex = Math.max(0, currentIndex - rewindCount); rewindCount = 0; isPaused = false;
     speakNext();
   }
 
   function speakNext() {
     if (isPaused || currentIndex >= sermonSentences.length) return;
-
-    const sentence = sermonSentences[currentIndex];
+    const raw = sermonSentences[currentIndex];
+    const cleaned = cleanSentence(raw);
     updatePreview(currentIndex);
-
-    currentUtterance = new SpeechSynthesisUtterance(sentence);
+    currentUtterance = new SpeechSynthesisUtterance(cleaned);
     currentUtterance.voice = getSelectedVoice();
-    currentUtterance.lang = currentUtterance.voice?.lang || 'ko-KR';
-
-    currentUtterance.onend = () => {
-      if (!isPaused) {
-        currentIndex++;
-        speakNext();
-      }
-    };
-
-    document.getElementById("status").textContent = `🗣️ ${currentIndex + 1}번째 문장 읽는 중...`;
+    currentUtterance.rate = speechRate;
+    currentUtterance.onend = () => { if (!isPaused) { currentIndex++; speakNext(); } };
+    document.getElementById("status").textContent = `${currentIndex + 1}번째 문장 읽는 중...`;
     synth.speak(currentUtterance);
   }
 
-  function updatePreview(index) {
-    const previewBox = document.getElementById("previewBox");
-    const start = Math.max(0, index - 2);
-    const end = Math.min(sermonSentences.length - 1, index + 2);
-    let html = "";
-
-    for (let i = start; i <= end; i++) {
-      if (i < index) {
-        html += `<div class="prev">${sermonSentences[i]}</div>`;
-      } else if (i === index) {
-        html += `<div class="current">${sermonSentences[i]}</div>`;
-      } else {
-        html += `<div class="next">${sermonSentences[i]}</div>`;
-      }
-    }
-
-    previewBox.innerHTML = html;
-  }
-
   function togglePause() {
-    if (synth.speaking && !isPaused) {
-      isPaused = true;
-      synth.cancel();
-      document.getElementById("status").textContent = "⏸️ 일시 정지됨";
-    } else if (isPaused) {
-      isPaused = false;
-      document.getElementById("status").textContent = "▶️ 이어서 읽는 중...";
-      speakNext();
-    }
+    if (synth.speaking && !isPaused) { isPaused = true; synth.cancel(); }
+    else if (isPaused) { isPaused = false; speakNext(); }
   }
 
   function stopSermon() {
-    isPaused = true;
-    currentIndex = 0;
-    rewindCount = 0;
-    synth.cancel();
-    document.getElementById("status").textContent = "🛑 설교 종료됨";
-    updatePreview(-1);
+    isPaused = true; currentIndex = 0; rewindCount = 0; synth.cancel(); updatePreview(-1);
   }
 
   function rewindSentence() {
-    rewindCount++;
-    document.getElementById("status").textContent = `⏪ ${rewindCount}문장 되감기 설정됨`;
+    rewindCount++; document.getElementById("status").textContent = `${rewindCount}문장 되감기 설정됨`;
+  }
+
+  function changeRate(delta) {
+    speechRate = Math.min(2.0, Math.max(0.5, speechRate + delta));
+    document.getElementById("rateStatus").textContent = `(현재 속도: ${speechRate.toFixed(1)})`;
   }
 
   function saveSermon() {
-    const text = document.getElementById("sermonInput").value;
-    localStorage.setItem("lastSermon", text);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `설교문_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
-    link.click();
-    document.getElementById("status").textContent = "💾 저장 완료!";
+    const txt = document.getElementById("sermonInput").value;
+    localStorage.setItem("lastSermon", txt);
+    const blob = new Blob([txt], { type: 'text/plain' });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `설교문_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
+    a.click();
   }
 
   function newSermon() {
     document.getElementById("sermonInput").value = "";
-    document.getElementById("status").textContent = "🆕 새 설교문을 작성하세요.";
-    currentIndex = 0;
-    rewindCount = 0;
-    isPaused = false;
+    currentIndex = 0; rewindCount = 0; isPaused = false;
     updatePreview(-1);
   }
 
-  window.onload = function() {
+  function startRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        document.getElementById("audioPlayback").src = url;
+        document.getElementById("audioPlayback").style.display = "block";
+        const link = document.getElementById("downloadLink");
+        link.href = url; link.style.display = "inline";
+      };
+      mediaRecorder.start();
+      document.getElementById("recordBtn").disabled = true;
+      document.getElementById("stopBtn").disabled = false;
+    });
+  }
+
+  function stopRecording() {
+    mediaRecorder.stop();
+    document.getElementById("recordBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+  }
+
+  window.onload = () => {
     loadVoices();
-    loadLastSermon();
+    setTimeout(loadVoices, 200); // Chrome 대기
+    const saved = localStorage.getItem("lastSermon");
+    if (saved) document.getElementById("sermonInput").value = saved;
     updatePreview(-1);
   };
 </script>
