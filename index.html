@@ -27,11 +27,21 @@
       white-space: pre-wrap;
       box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
+    #convertedTextBox {
+      background: #fefefe;
+      border: 2px solid #a0c4ff;
+      padding: 20px;
+      margin-top: 20px;
+      line-height: 1.8;
+      font-size: 1.2em;
+      white-space: pre-wrap;
+      box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+    }
   </style>
 </head>
 <body>
 
-<h1>📖 설교 읽기 + 🎙️ 직접 낭독 + 📝 텍스트 변환 + 🔴 음성 저장</h1>
+<h1>📖 설교 읽기 + 🎙️ 직접 낭독 녹음 + 📝 음성 텍스트 변환</h1>
 
 <div id="previewBox"></div>
 <textarea id="sermonInput" placeholder="한 문장마다 줄을 바꿔 작성하세요."></textarea><br>
@@ -55,22 +65,19 @@
 </div>
 
 <hr>
-<h2>📝 실시간 텍스트 변환 (내가 낭독한 설교)</h2>
-<button onclick="startSTT()">🎙️ 낭독 시작</button>
-<button onclick="stopSTT()">⏹️ 종료</button>
-<div id="liveTranscript">(여기에 낭독한 설교가 텍스트로 표시됩니다)</div>
-
-<hr>
-<h2>🎤 직접 낭독 음성 녹음</h2>
+<h2>🎤 직접 낭독 녹음</h2>
 <button onclick="startRecording()">🔴 녹음 시작</button>
 <button onclick="stopRecording()">🛑 녹음 종료 및 저장</button>
 <audio id="recordedAudio" controls></audio>
 
+<h2>📝 내가 낭독한 설교 내용 (텍스트 변환)</h2>
+<div id="convertedTextBox">(여기에 내가 낭독한 설교가 가독성 있게 표시됩니다)</div>
+
 <script>
   let sermonSentences = [], currentIndex = 0, isPaused = false, rewindCount = 0;
   let synth = window.speechSynthesis, voices = [], currentUtterance = null, speechRate = 1.0;
-  let recognition;
   let mediaRecorder, recordedChunks = [];
+  let recognition;
 
   function loadVoices() {
     voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
@@ -156,26 +163,6 @@
     updatePreview(-1);
   }
 
-  function startSTT() {
-    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = "ko-KR";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = event => {
-      let result = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        result += event.results[i][0].transcript;
-        if (event.results[i].isFinal) result += "\n";
-      }
-      document.getElementById("liveTranscript").textContent = result;
-    };
-    recognition.start();
-  }
-
-  function stopSTT() {
-    if (recognition) recognition.stop();
-  }
-
   function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       recordedChunks = [];
@@ -184,8 +171,7 @@
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'audio/webm' });
         const audioURL = URL.createObjectURL(blob);
-        const audio = document.getElementById("recordedAudio");
-        audio.src = audioURL;
+        document.getElementById("recordedAudio").src = audioURL;
         const a = document.createElement("a");
         a.href = audioURL;
         a.download = `설교_녹음_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.webm`;
@@ -197,6 +183,22 @@
 
   function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  function startSTT() {
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "ko-KR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = event => {
+      let result = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        result += event.results[i][0].transcript;
+        if (event.results[i].isFinal) result += "\n";
+      }
+      document.getElementById("convertedTextBox").textContent = result;
+    };
+    recognition.start();
   }
 
   window.onload = () => {
