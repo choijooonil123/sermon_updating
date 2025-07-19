@@ -64,12 +64,136 @@
 <audio id="recordedAudio" controls></audio>
 
 <h2>📝 내가 낭독한 설교 내용 (텍스트 변환)</h2>
+<button onclick="startSTT()">🎙️ 낭독 시작</button>
 <button onclick="formatTranscript()">🧹 텍스트 정리</button>
 <button onclick="copyTranscript()">📋 복사</button>
 <button onclick="downloadTranscript()">⬇️ 저장</button>
 <div id="convertedTextBox">(여기에 내가 낭독한 설교가 가독성 있게 표시됩니다)</div>
 
 <script>
+  let recognition;
+  let fullTranscript = "";
+  let speechIndex = 0;
+  let speechList = [];
+  let synth = window.speechSynthesis;
+  let currentUtterance = null;
+  let isPaused = false;
+  let rate = 1.0;
+
+  function populateVoices() {
+    const voices = synth.getVoices();
+    const voiceSelect = document.getElementById("voiceSelect");
+    voiceSelect.innerHTML = '';
+    voices.filter(v => v.lang.startsWith('ko')).forEach(voice => {
+      const option = document.createElement("option");
+      option.textContent = voice.name;
+      option.value = voice.name;
+      voiceSelect.appendChild(option);
+    });
+  }
+  populateVoices();
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = populateVoices;
+  }
+
+  function startSermon() {
+    const text = document.getElementById("sermonInput").value.trim();
+    if (!text) return;
+    speechList = text.split("\n").filter(s => s.trim() !== "");
+    speechIndex = 0;
+    readNext();
+  }
+
+  function readNext() {
+    if (speechIndex >= speechList.length) return;
+    const preview = document.getElementById("previewBox");
+    let html = "";
+    for (let i = -2; i <= 2; i++) {
+      const idx = speechIndex + i;
+      if (idx < 0 || idx >= speechList.length) continue;
+      const cls = i === 0 ? 'current' : i < 0 ? 'prev' : 'next';
+      html += `<div class="${cls}">${speechList[idx]}</div>`;
+    }
+    preview.innerHTML = html;
+
+    const utter = new SpeechSynthesisUtterance(speechList[speechIndex]);
+    utter.lang = "ko-KR";
+    utter.rate = rate;
+    const selectedVoice = Array.from(synth.getVoices()).find(v => v.name === document.getElementById("voiceSelect").value);
+    if (selectedVoice) utter.voice = selectedVoice;
+    utter.onend = () => { if (!isPaused) { speechIndex++; readNext(); } };
+    currentUtterance = utter;
+    synth.speak(utter);
+  }
+
+  function togglePause() {
+    if (synth.speaking) {
+      if (!isPaused) {
+        synth.pause();
+        isPaused = true;
+      } else {
+        synth.resume();
+        isPaused = false;
+      }
+    }
+  }
+
+  function stopSermon() {
+    synth.cancel();
+    isPaused = false;
+    currentUtterance = null;
+  }
+
+  function rewindSentence() {
+    if (speechIndex > 0) speechIndex--;
+    stopSermon();
+    readNext();
+  }
+
+  function newSermon() {
+    document.getElementById("sermonInput").value = "";
+  }
+
+  function saveSermon() {
+    const text = document.getElementById("sermonInput").value;
+    localStorage.setItem("savedSermon", text);
+    alert("설교가 저장되었습니다.");
+  }
+
+  window.onload = () => {
+    const saved = localStorage.getItem("savedSermon");
+    if (saved) document.getElementById("sermonInput").value = saved;
+  }
+
+  function changeRate(delta) {
+    rate = Math.max(0.1, Math.min(2.0, rate + delta));
+    document.getElementById("rateStatus").textContent = `(현재 속도: ${rate.toFixed(1)})`;
+  }
+
+  let mediaRecorder;
+  let audioChunks = [];
+  function startRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.start();
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    });
+  }
+
+  function stopRecording() {
+    mediaRecorder.stop();
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(audioChunks);
+      const url = URL.createObjectURL(blob);
+      document.getElementById("recordedAudio").src = url;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sermon_recording.webm";
+      a.click();
+    };
+  }
+
   let recognition;
   let fullTranscript = "";
 
