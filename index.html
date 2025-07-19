@@ -16,16 +16,9 @@
       font-size: 1.3em; font-weight: bold; color: #222; background: #eef;
       padding: 4px; border-radius: 6px;
     }
-    audio, #liveTranscript {
+    audio {
       margin-top: 20px;
       width: 100%;
-      background: #ffffff;
-      border: 1px solid #ccc;
-      padding: 20px;
-      line-height: 1.8;
-      font-size: 1.2em;
-      white-space: pre-wrap;
-      box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
     #convertedTextBox {
       background: #fefefe;
@@ -71,119 +64,14 @@
 <audio id="recordedAudio" controls></audio>
 
 <h2>📝 내가 낭독한 설교 내용 (텍스트 변환)</h2>
+<button onclick="formatTranscript()">🧹 텍스트 정리</button>
+<button onclick="copyTranscript()">📋 복사</button>
+<button onclick="downloadTranscript()">⬇️ 저장</button>
 <div id="convertedTextBox">(여기에 내가 낭독한 설교가 가독성 있게 표시됩니다)</div>
 
 <script>
-  let sermonSentences = [], currentIndex = 0, isPaused = false, rewindCount = 0;
-  let synth = window.speechSynthesis, voices = [], currentUtterance = null, speechRate = 1.0;
-  let mediaRecorder, recordedChunks = [];
   let recognition;
-
-  function loadVoices() {
-    voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
-    const select = document.getElementById("voiceSelect");
-    select.innerHTML = "";
-    voices.forEach((v, i) => {
-      const opt = document.createElement("option");
-      opt.textContent = `${v.name} (${v.lang})`; opt.value = i;
-      select.appendChild(opt);
-    });
-  }
-
-  function getSelectedVoice() {
-    return voices[document.getElementById("voiceSelect").value] || null;
-  }
-
-  function cleanSentence(text) {
-    return text.replace(/<[^>]*>/g, '').replace(/(\d+):(\d+)/g, '$1장 $2절').replace(/[<>]/g, '');
-  }
-
-  function updatePreview(index) {
-    const box = document.getElementById("previewBox");
-    const start = Math.max(0, index - 2), end = Math.min(sermonSentences.length - 1, index + 2);
-    let html = "";
-    for (let i = start; i <= end; i++) {
-      const cls = i < index ? 'prev' : i === index ? 'current' : 'next';
-      html += `<div class="${cls}">${cleanSentence(sermonSentences[i])}</div>`;
-    }
-    box.innerHTML = html;
-  }
-
-  function startSermon() {
-    const text = document.getElementById("sermonInput").value;
-    if (!text.trim()) return alert("설교문을 입력하세요.");
-    sermonSentences = text.split(/\n+/).filter(t => t.trim().length);
-    currentIndex = Math.max(0, currentIndex - rewindCount); rewindCount = 0; isPaused = false;
-    speakNext();
-  }
-
-  function speakNext() {
-    if (isPaused || currentIndex >= sermonSentences.length) return;
-    const raw = sermonSentences[currentIndex];
-    const cleaned = cleanSentence(raw);
-    updatePreview(currentIndex);
-    currentUtterance = new SpeechSynthesisUtterance(cleaned);
-    currentUtterance.voice = getSelectedVoice();
-    currentUtterance.rate = speechRate;
-    currentUtterance.onend = () => { if (!isPaused) { currentIndex++; speakNext(); } };
-    synth.speak(currentUtterance);
-  }
-
-  function togglePause() {
-    if (synth.speaking && !isPaused) { isPaused = true; synth.cancel(); }
-    else if (isPaused) { isPaused = false; speakNext(); }
-  }
-
-  function stopSermon() {
-    isPaused = true; currentIndex = 0; rewindCount = 0; synth.cancel(); updatePreview(-1);
-  }
-
-  function rewindSentence() {
-    rewindCount++;
-  }
-
-  function changeRate(delta) {
-    speechRate = Math.min(2.0, Math.max(0.5, speechRate + delta));
-    document.getElementById("rateStatus").textContent = `(현재 속도: ${speechRate.toFixed(1)})`;
-  }
-
-  function saveSermon() {
-    const txt = document.getElementById("sermonInput").value;
-    localStorage.setItem("lastSermon", txt);
-    const blob = new Blob([txt], { type: 'text/plain' });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `설교문_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
-    a.click();
-  }
-
-  function newSermon() {
-    document.getElementById("sermonInput").value = "";
-    currentIndex = 0; rewindCount = 0; isPaused = false;
-    updatePreview(-1);
-  }
-
-  function startRecording() {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      recordedChunks = [];
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        const audioURL = URL.createObjectURL(blob);
-        document.getElementById("recordedAudio").src = audioURL;
-        const a = document.createElement("a");
-        a.href = audioURL;
-        a.download = `설교_녹음_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.webm`;
-        a.click();
-      };
-      mediaRecorder.start();
-    });
-  }
-
-  function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  }
+  let fullTranscript = "";
 
   function startSTT() {
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -194,20 +82,35 @@
       let result = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         result += event.results[i][0].transcript;
-        if (event.results[i].isFinal) result += "\n";
+        if (event.results[i].isFinal) {
+          result += "\n";
+          fullTranscript += result;
+        }
       }
-      document.getElementById("convertedTextBox").textContent = result;
+      document.getElementById("convertedTextBox").textContent = fullTranscript + result;
     };
     recognition.start();
   }
 
-  window.onload = () => {
-    loadVoices();
-    setTimeout(loadVoices, 200);
-    const saved = localStorage.getItem("lastSermon");
-    if (saved) document.getElementById("sermonInput").value = saved;
-    updatePreview(-1);
-  };
+  function formatTranscript() {
+    const cleaned = fullTranscript.replace(/\n{2,}/g, "\n").trim();
+    document.getElementById("convertedTextBox").textContent = cleaned;
+  }
+
+  function copyTranscript() {
+    const text = document.getElementById("convertedTextBox").textContent;
+    navigator.clipboard.writeText(text).then(() => alert("텍스트가 복사되었습니다."));
+  }
+
+  function downloadTranscript() {
+    const text = document.getElementById("convertedTextBox").textContent;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `설교_텍스트_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '-')}.txt`;
+    a.click();
+  }
 </script>
 
 </body>
