@@ -91,10 +91,18 @@
       voiceSelect.appendChild(option);
     });
   }
-  populateVoices();
-  if (speechSynthesis.onvoiceschanged !== undefined) {
-    speechSynthesis.onvoiceschanged = populateVoices;
-  }
+
+  window.onload = () => {
+    const saved = localStorage.getItem("savedSermon");
+    if (saved) document.getElementById("sermonInput").value = saved;
+
+    if (typeof speechSynthesis !== "undefined") {
+      populateVoices();
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = populateVoices;
+      }
+    }
+  };
 
   function startSermon() {
     const text = document.getElementById("sermonInput").value.trim();
@@ -160,11 +168,6 @@
     alert("설교가 저장되었습니다.");
   }
 
-  window.onload = () => {
-    const saved = localStorage.getItem("savedSermon");
-    if (saved) document.getElementById("sermonInput").value = saved;
-  }
-
   function changeRate(delta) {
     rate = Math.max(0.1, Math.min(2.0, rate + delta));
     document.getElementById("rateStatus").textContent = `(현재 속도: ${rate.toFixed(1)})`;
@@ -193,9 +196,6 @@
       a.click();
     };
   }
-
-  let recognition;
-  let fullTranscript = "";
 
   function startSTT() {
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
