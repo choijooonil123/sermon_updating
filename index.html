@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>설교 읽기 + 직접 녹음 시스템</title>
+  <title>설교 읽기 + 직접 녹음 + 음성 텍스트 변환</title>
   <style>
     body { font-family: Arial; margin: 40px; background: #f0f8ff; }
     textarea { width: 100%; height: 150px; font-size: 1em; padding: 10px; white-space: pre-wrap; }
@@ -18,11 +18,19 @@
       padding: 4px; border-radius: 6px;
     }
     audio { margin-top: 15px; width: 100%; }
+    #liveTranscript {
+      margin-top: 15px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 15px;
+      min-height: 100px;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
 
-<h1>📖 설교 읽기 + 🎙️ 직접 낭독 녹음</h1>
+<h1>📖 설교 읽기 + 🎙️ 직접 낭독 녹음 + 📝 음성 텍스트 변환</h1>
 
 <div id="previewBox"></div>
 <textarea id="sermonInput" placeholder="한 문장마다 줄을 바꿔 작성하세요."></textarea><br>
@@ -52,12 +60,18 @@
 <a id="downloadLink" style="display: none;" download="설교녹음.webm">💾 녹음 다운로드</a>
 <audio id="audioPlayback" controls style="display: none;"></audio>
 
+<h2>📝 실시간 음성 텍스트 변환</h2>
+<button onclick="startSTT()">🎙️ 낭독 시작</button>
+<button onclick="stopSTT()">⏹️ 종료</button>
+<div id="liveTranscript">(여기에 낭독된 텍스트가 표시됩니다)</div>
+
 <p id="status">상태 메시지</p>
 
 <script>
   let sermonSentences = [], currentIndex = 0, isPaused = false, rewindCount = 0;
   let synth = window.speechSynthesis, voices = [], currentUtterance = null, speechRate = 1.0;
   let mediaRecorder, audioChunks = [];
+  let recognition;
 
   function loadVoices() {
     voices = synth.getVoices().filter(v => v.lang.startsWith("ko") || v.lang.startsWith("en"));
@@ -167,6 +181,26 @@
     mediaRecorder.stop();
     document.getElementById("recordBtn").disabled = false;
     document.getElementById("stopBtn").disabled = true;
+  }
+
+  function startSTT() {
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "ko-KR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = event => {
+      let result = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        result += event.results[i][0].transcript;
+        if (event.results[i].isFinal) result += "\n";
+      }
+      document.getElementById("liveTranscript").textContent = result;
+    };
+    recognition.start();
+  }
+
+  function stopSTT() {
+    if (recognition) recognition.stop();
   }
 
   window.onload = () => {
